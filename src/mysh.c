@@ -5,6 +5,59 @@
 
 #define MAX_CMD_LEN 1024
 
+typedef int sh_status;
+
+sh_status execute_builtin(char **argv) {
+    if (strcmp(argv[0], "pwd") == 0) {
+        char cwd[MAX_CMD_LEN];
+        if (getcwd(cwd, sizeof(cwd)) == NULL) {
+            perror("pwd");
+            return 0;    // failure
+        }
+        printf("%s\n", cwd);
+        return 1;        // success
+    }
+    else if (strcmp(argv[0], "cd") == 0) {
+        if (argv[1] == NULL || argv[2] != NULL) {
+            fprintf(stderr, "cd: wrong number of arguments\n");
+            return 0;
+        }
+        if (chdir(argv[1]) != 0) {
+            perror("cd");
+            return 0;
+        }
+        return 1;
+    }
+    else if (strcmp(argv[0], "exit") == 0) {
+        exit(EXIT_SUCCESS);
+    }
+
+    // not a builtin
+    return -1;
+}
+
+sh_status execute_external(char **argv) {
+    // Phase 2 stub: just say it failed or print something.
+    // In Phase 3, you’ll replace this with fork/execv logic.
+    fprintf(stderr, "external command not implemented yet: %s\n", argv[0]);
+    return 0; // failure
+}
+
+sh_status execute_simple_command(char **argv) {
+    if (argv[0] == NULL) {
+        return 1; // nothing to do
+    }
+
+    // Try builtins first
+    sh_status status = execute_builtin(argv);
+    if (status != -1) {
+        return status; // 0 or 1
+    }
+
+    // Not a builtin -> later this will call fork/exec
+    return execute_external(argv);
+}
+
 int main(int argc, char *argv[])
 {
     FILE *input = stdin;
@@ -135,15 +188,15 @@ int main(int argc, char *argv[])
         }
 
         // Detect leading and/or
-        int cmdIsAnd = 0;
-        int cmdIsOr = 0;
+        int cmd_is_and = 0;
+        int cmd_is_or = 0;
 
-        if(strcmp(tokens[0], "and")     == 0){cmdIsAnd = 1;}
-        else if(strcmp(tokens[0], "or") == 0){cmdIsOr = 1;}
+        if(strcmp(tokens[0], "and")     == 0){cmd_is_and = 1;}
+        else if(strcmp(tokens[0], "or") == 0){cmd_is_or = 1;}
         
         // shift tokens if there is a leading and/or
         int startIndex = 0;
-        if(cmdIsAnd || cmdIsOr){
+        if(cmd_is_and || cmd_is_or){
             startIndex = 1;
             for(int i = 1 ; i <= token_count ; i++){
                 tokens[i - 1] = tokens[i];
@@ -157,41 +210,19 @@ int main(int argc, char *argv[])
             
         }
 
-        if (strcmp(tokens[0], "pwd") == 0)
-        {
-            char cwd[MAX_CMD_LEN];
-            if (getcwd(cwd, sizeof(cwd)) != NULL)
-            {
-                printf("%s\n", cwd);
-            }
-            else
-            {
-                perror("pwd");
-            }
+        // decide to skip based off success/failure of last command
+        if (cmd_is_and && !last_success) {
+            continue;   // previous failed -> skip;
+
         }
-        else if (strcmp(tokens[0], "cd") == 0)
-        {
-            if (token_count != 2)
-            {
-                fprintf(stderr, "cd: wrong number of arguments\n");
-            }
-            else
-            {
-                if (chdir(tokens[1]) != 0)
-                {
-                    perror("cd");
-                }
-            }
+        if (cmd_is_or && last_success) {
+            continue;   // previous succeeded -> skip
         }
-        else if (strcmp(tokens[0], "exit") == 0)
-        {
-            break;
-        }
-        else
-        {
-            // TODO: Parse and execute external commands
-            printf("You entered: %s\n", command);
-        }
+
+        // run command
+        sh_status status = execute_simple_command(tokens);
+        last_success = status ? 1 : 0;
+
     }
 
     // Print goodbye message in interactive mode
